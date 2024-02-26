@@ -1,0 +1,134 @@
+### TRATAMENTO DOS DADOS
+
+# Carregando base de dados
+bd_churn <- read.csv("Bank Customer Churn Prediction.csv")
+
+#Visualizando as observações e as especificações referentes às variáveis do dataset
+bd_churn %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped",
+                full_width = F,
+                font_size = 14)
+
+#Estatísticas univariadas
+summary(bd_churn)
+
+# Formatando variáveis
+#bd_churn$churn <- as.factor(bd_churn$churn)
+bd_churn$customer_id <- as.character(bd_churn$customer_id)
+bd_churn$country <- as.factor(bd_churn$country)
+bd_churn$gender <- as.factor(bd_churn$gender)
+bd_churn$products_number <- as.factor(bd_churn$products_number)
+bd_churn$credit_card <- as.factor(bd_churn$credit_card)
+bd_churn$active_member <- as.factor(bd_churn$active_member)
+
+#Visualização Simplificada dos dados com tipo das variáveis
+glimpse(bd_churn)
+
+
+### MODELO REGRESSÃO INICIAL
+
+#Estimando a Regressão Múltipla
+modelo_churn <- glm(formula = churn ~ . - customer_id, 
+                    data = bd_churn, 
+                    family = "binomial")
+
+#Parâmetros do modelo
+summary(modelo_churn)
+logLik(modelo_churn)
+
+#Procedimento Stepwise
+step_churn <- step(object = modelo_churn,
+                   k = qchisq(p = 0.05, df = 1, lower.tail = FALSE))
+
+#Parâmetros do modelo step_fidelidade
+summary(step_churn)
+logLik(step_churn)
+
+
+### MODELOS COM DUMMIES
+
+# Dummização
+churn_dummies <- dummy_columns(.data = bd_churn,
+                               select_columns = c("country", 
+                                                  "gender",
+                                                  "products_number", 
+                                                  "credit_card",
+                                                  "active_member"
+                                                  ,"tenure"),
+                               remove_selected_columns = T,
+                               remove_first_dummy = T)
+
+#Visualizando a base de dados fidelidade_dummies
+churn_dummies %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped", 
+                full_width = F, 
+                font_size = 16)
+
+modelo_churn_dummies <- glm(formula = churn ~ . - customer_id, 
+                            data = churn_dummies, 
+                            family = "binomial")
+
+#Parâmetros do modelo_churn_dummies
+summary(modelo_churn_dummies)
+logLik(modelo_churn_dummies)
+
+#Procedimento Stepwise
+step_churn_dummies <- step(object = modelo_churn_dummies,
+                           k = qchisq(p = 0.05, df = 1, lower.tail = FALSE))
+
+#Parâmetros do modelo step_churn_dummies
+summary(step_churn_dummies)
+logLik(step_churn_dummies)
+
+#Visualização do modelo no ambiente Viewer
+#função 'extract_eq' do pacote 'equatiomatic'
+extract_eq(step_churn_dummies, use_coefs = T,
+           wrap = T, show_distribution = T) %>%
+  kable() %>%
+  kable_styling(bootstrap_options = "striped",
+                full_width = F,
+                font_size = 25)
+
+#Comparando os modelos step_fidelidade_dummies e modelo_fidelidade_dummies
+#função lrtest do pacote lmtest
+lrtest(step_churn, step_churn_dummies)
+
+export_summs(modelo_churn_dummies, step_churn_dummies,
+             model.names = c("Modelo Dummies","Modelo Dummies Stepwise"),
+             scale = F, digits = 4)
+
+
+### CONSTRUÇÃO DA MATRIZ DE CONFUSÃO
+
+confusionMatrix(
+  table(predict(step_churn_dummies, type = "response") >= 0.50, 
+        bd_churn$churn == 1)[2:1, 2:1]
+)
+
+# Construção da Curva ROC
+ROC <- roc(response = bd_churn$churn, 
+           predictor = step_churn_dummies$fitted.values)
+
+#Plotagem da curva ROC propriamente dita
+ggplot() +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1),
+               color = "grey40", size = 0.2) +
+  geom_line(aes(x = 1 - especificidade, y = sensitividade),
+            color = "darkorchid", size = 2) +
+  labs(x = "1 - Especificidade",
+       y = "Sensitividade",
+       title = paste("Área abaixo da curva:",
+                     round(ROC$auc, 4)#,
+                    # "|",
+                    # "Coeficiente de Gini:",
+                    # round((ROC$auc[1] - 0.5) / 0.5, 4)
+                    )) +
+  theme(panel.background = element_rect(NA),
+        panel.border = element_rect(color = "black", fill = NA),
+        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 10)
+  )
+
+ROC$auc
